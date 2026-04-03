@@ -1,12 +1,13 @@
 const headline = document.getElementById("headline");
-const oilPulse = document.getElementById("oilPulse");
+const marketPulse = document.getElementById("marketPulse");
 const statusText = document.getElementById("statusText");
 const refreshButton = document.getElementById("refreshButton");
-const summaryBands = document.getElementById("summaryBands");
-const oilGroup = document.getElementById("oilGroup");
-const beneficiaryGroup = document.getElementById("beneficiaryGroup");
-const broadMarketGroup = document.getElementById("broadMarketGroup");
-const consumerGroup = document.getElementById("consumerGroup");
+const snapshotGrid = document.getElementById("snapshotGrid");
+const insightsGrid = document.getElementById("insightsGrid");
+const contendersGroup = document.getElementById("contendersGroup");
+const skepticalGroup = document.getElementById("skepticalGroup");
+const longshotGroup = document.getElementById("longshotGroup");
+const formulaList = document.getElementById("formulaList");
 const scoreboard = document.getElementById("scoreboard");
 
 function formatPct(value) {
@@ -17,7 +18,15 @@ function formatPct(value) {
   return `${(Number(value) * 100).toFixed(1)}%`;
 }
 
-function formatDelta(value) {
+function formatAmericanOdds(value) {
+  if (value === null || value === undefined) {
+    return "--";
+  }
+
+  return value > 0 ? `+${value}` : `${value}`;
+}
+
+function formatPointGap(value) {
   if (value === null || value === undefined) {
     return "--";
   }
@@ -25,14 +34,6 @@ function formatDelta(value) {
   const points = Number(value) * 100;
   const prefix = points > 0 ? "+" : "";
   return `${prefix}${points.toFixed(1)} pts`;
-}
-
-function formatAmericanOdds(value) {
-  if (value === null || value === undefined) {
-    return "--";
-  }
-
-  return value > 0 ? `+${value}` : `${value}`;
 }
 
 function toneClass(value) {
@@ -51,59 +52,63 @@ function toneClass(value) {
   return "neutral";
 }
 
-function renderBand(label, value, helper) {
+function probabilityBar(label, value, variant) {
+  const width = value === null || value === undefined ? 0 : Math.max(0, Math.min(100, value * 100));
+
   return `
-    <article class="band ${toneClass(value - 0.5)}">
-      <p class="band-label">${label}</p>
+    <div class="probability-block">
+      <div class="probability-label">
+        <span>${label}</span>
+        <strong>${formatPct(value)}</strong>
+      </div>
+      <div class="probability-track">
+        <span class="probability-fill ${variant}" style="width:${width}%"></span>
+      </div>
+    </div>
+  `;
+}
+
+function renderSnapshotCard(label, value, helper, variant) {
+  return `
+    <article class="snapshot-card">
+      <p class="eyebrow">${label}</p>
       <h3>${formatPct(value)}</h3>
       <p class="band-helper">${helper}</p>
+      ${probabilityBar(label, value, variant)}
+    </article>
+  `;
+}
+
+function renderInsightCard(item) {
+  return `
+    <article class="insight-card">
+      <p class="eyebrow">${item.label}</p>
+      <h3>${item.team}</h3>
+      <p class="symbol">${item.symbol}</p>
+      <strong>${item.value}</strong>
+      <p class="band-helper">${item.note}</p>
     </article>
   `;
 }
 
 function renderTeamCard(team) {
   return `
-    <article class="quote-card ${toneClass(team.performanceGap)}">
-      <div class="quote-topline">
+    <article class="team-card ${toneClass(team.performanceGap)}">
+      <div class="team-card-top">
         <div>
           <p class="symbol">${team.symbol} | ${team.record}</p>
-          <h3>${team.team}</h3>
+          <h3><a href="${team.teamUrl}" target="_blank" rel="noreferrer">${team.team}</a></h3>
         </div>
-        <div class="pill ${toneClass(team.performanceGap)}">${formatDelta(team.performanceGap)}</div>
+        <div class="pill ${toneClass(team.performanceGap)}">${formatPointGap(team.performanceGap)}</div>
+      </div>
+      <div class="probability-stack">
+        ${probabilityBar("Actual", team.actualWinPct, "actual")}
+        ${probabilityBar("Projected", team.projectedWinPct, "projected")}
+        ${probabilityBar("Playoff", team.playoffImpliedProbability, "market")}
       </div>
       <p class="last-price">Playoffs ${formatAmericanOdds(team.playoffOdds)} | Next game ${formatAmericanOdds(team.nextGameMoneyline)}</p>
       <p class="thesis">${team.thesis}</p>
     </article>
-  `;
-}
-
-function renderMatrix(items) {
-  scoreboard.innerHTML = `
-    <div class="matrix-head">
-      <span>Team</span>
-      <span>Actual win%</span>
-      <span>Projected win%</span>
-      <span>Playoff implied</span>
-      <span>Next game implied</span>
-      <span>Market read</span>
-    </div>
-    ${items
-      .map(
-        (team) => `
-          <article class="matrix-row">
-            <div>
-              <strong>${team.team}</strong>
-              <p>${team.symbol} | ${team.record}</p>
-            </div>
-            <div>${formatPct(team.actualWinPct)}</div>
-            <div>${formatPct(team.projectedWinPct)}</div>
-            <div class="${toneClass(team.marketGap)}">${formatPct(team.playoffImpliedProbability)}</div>
-            <div>${formatPct(team.nextGameImpliedProbability)}</div>
-            <div><span class="relationship ${relationshipClass(team.marketRead)}">${team.marketRead}</span></div>
-          </article>
-        `
-      )
-      .join("")}
   `;
 }
 
@@ -112,11 +117,41 @@ function relationshipClass(label) {
     return "diverging";
   }
 
-  if (label.includes("forgiving") || label.includes("favorite")) {
+  if (label.includes("favorite") || label.includes("forgiving")) {
     return "tracking";
   }
 
   return "neutral";
+}
+
+function renderScoreboard(items) {
+  scoreboard.innerHTML = `
+    <div class="matrix-head">
+      <span>Team</span>
+      <span>Actual</span>
+      <span>Projected</span>
+      <span>Playoff</span>
+      <span>Next game</span>
+      <span>Read</span>
+    </div>
+    ${items
+      .map(
+        (team) => `
+          <article class="matrix-row">
+            <div class="team-cell">
+              <strong><a href="${team.teamUrl}" target="_blank" rel="noreferrer">${team.team}</a></strong>
+              <p>${team.symbol} | ${team.record}</p>
+            </div>
+            <div>${probabilityBar("Actual", team.actualWinPct, "actual")}</div>
+            <div>${probabilityBar("Projected", team.projectedWinPct, "projected")}</div>
+            <div>${probabilityBar("Playoff", team.playoffImpliedProbability, "market")}</div>
+            <div>${probabilityBar("Next", team.nextGameImpliedProbability, "next-game")}</div>
+            <div><span class="relationship ${relationshipClass(team.marketRead)}">${team.marketRead}</span></div>
+          </article>
+        `
+      )
+      .join("")}
+  `;
 }
 
 function setGroup(target, items, emptyText) {
@@ -128,64 +163,66 @@ function setGroup(target, items, emptyText) {
 function renderDashboard(payload) {
   headline.textContent = `${payload.summary.headline} ${payload.summary.takeaway}`;
 
-  oilPulse.className = `oil-pulse ${toneClass(payload.summary.averages.playoffImpliedProbability - payload.summary.averages.projectedWinPct)}`;
-  oilPulse.innerHTML = `
-    <span>Average playoff implied probability</span>
+  marketPulse.innerHTML = `
+    <span>League-wide playoff pricing</span>
     <strong>${formatPct(payload.summary.averages.playoffImpliedProbability)}</strong>
+    <p class="status-text">Average projected win rate: ${formatPct(payload.summary.averages.projectedWinPct)}</p>
   `;
 
-  summaryBands.innerHTML = [
-    renderBand(
+  snapshotGrid.innerHTML = [
+    renderSnapshotCard(
       "Actual board average",
       payload.summary.averages.actualWinPct,
-      "Short-run record across the sample teams"
+      "How the sample is performing right now.",
+      "actual"
     ),
-    renderBand(
+    renderSnapshotCard(
       "Projected board average",
       payload.summary.averages.projectedWinPct,
-      "Preseason win totals divided by 162"
+      "What preseason win totals imply over 162 games.",
+      "projected"
     ),
-    renderBand(
+    renderSnapshotCard(
       "Playoff pricing",
       payload.summary.averages.playoffImpliedProbability,
-      "How futures markets price postseason odds"
+      "How futures markets translate team strength into postseason chances.",
+      "market"
     ),
-    renderBand(
+    renderSnapshotCard(
       "Next-game pricing",
       payload.summary.averages.nextGameImpliedProbability,
-      "How moneylines treat the next matchup"
+      "How tonight's moneylines react to matchup-level details.",
+      "next-game"
     )
   ].join("");
 
-  setGroup(oilGroup, payload.groups.contenders || [], "No heavy favorites in the current sample.");
+  insightsGrid.innerHTML = (payload.insights || []).map(renderInsightCard).join("");
+  formulaList.innerHTML = (payload.formulaGuide || []).map((item) => `<li>${item}</li>`).join("");
+
+  setGroup(contendersGroup, payload.groups.contenders || [], "No heavy favorites in the current sample.");
   setGroup(
-    beneficiaryGroup,
+    skepticalGroup,
     payload.groups.skepticalStarts || [],
-    "No teams are clearly outrunning their prices right now."
+    "No fast starters are clearly being discounted right now."
   );
-  setGroup(
-    broadMarketGroup,
-    payload.groups.forgivingMarket || [],
-    "No teams are being strongly protected by the market in this sample."
-  );
-  setGroup(consumerGroup, payload.groups.longshots || [], "No longshots in the current sample.");
-  renderMatrix(payload.scoreboard || []);
+  setGroup(longshotGroup, payload.groups.longshots || [], "No longshots in the current sample.");
+  renderScoreboard(payload.scoreboard || []);
 
   statusText.textContent = `Last refreshed ${new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short"
-  }).format(new Date(payload.fetchedAt))}. Sample values are illustrative so you can inspect the math directly.`;
+  }).format(new Date(payload.fetchedAt))}. Team names open their MLB team pages in a new tab.`;
 }
 
 function renderError(message) {
   headline.textContent = message;
-  oilPulse.className = "oil-pulse neutral";
-  oilPulse.textContent = "Unable to refresh";
-  summaryBands.innerHTML = `<div class="empty-state">${message}</div>`;
-  oilGroup.innerHTML = "";
-  beneficiaryGroup.innerHTML = "";
-  broadMarketGroup.innerHTML = "";
-  consumerGroup.innerHTML = "";
+  marketPulse.textContent = "Unable to refresh";
+  snapshotGrid.innerHTML = `<div class="empty-state">${message}</div>`;
+  insightsGrid.innerHTML = "";
+  formulaList.innerHTML = "";
+  contendersGroup.innerHTML = "";
+  skepticalGroup.innerHTML = "";
+  longshotGroup.innerHTML = "";
   scoreboard.innerHTML = "";
 }
 
