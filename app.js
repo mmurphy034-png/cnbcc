@@ -9,25 +9,30 @@ const broadMarketGroup = document.getElementById("broadMarketGroup");
 const consumerGroup = document.getElementById("consumerGroup");
 const scoreboard = document.getElementById("scoreboard");
 
-function formatPrice(value) {
+function formatPct(value) {
   if (value === null || value === undefined) {
     return "--";
   }
 
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2
-  }).format(Number(value));
+  return `${(Number(value) * 100).toFixed(1)}%`;
 }
 
-function formatPercent(value) {
+function formatDelta(value) {
   if (value === null || value === undefined) {
     return "--";
   }
 
-  const prefix = value > 0 ? "+" : "";
-  return `${prefix}${Number(value).toFixed(2)}%`;
+  const points = Number(value) * 100;
+  const prefix = points > 0 ? "+" : "";
+  return `${prefix}${points.toFixed(1)} pts`;
+}
+
+function formatAmericanOdds(value) {
+  if (value === null || value === undefined) {
+    return "--";
+  }
+
+  return value > 0 ? `+${value}` : `${value}`;
 }
 
 function toneClass(value) {
@@ -35,11 +40,11 @@ function toneClass(value) {
     return "neutral";
   }
 
-  if (value > 0) {
+  if (value > 0.02) {
     return "positive";
   }
 
-  if (value < 0) {
+  if (value < -0.02) {
     return "negative";
   }
 
@@ -48,26 +53,26 @@ function toneClass(value) {
 
 function renderBand(label, value, helper) {
   return `
-    <article class="band ${toneClass(value)}">
+    <article class="band ${toneClass(value - 0.5)}">
       <p class="band-label">${label}</p>
-      <h3>${formatPercent(value)}</h3>
+      <h3>${formatPct(value)}</h3>
       <p class="band-helper">${helper}</p>
     </article>
   `;
 }
 
-function renderQuoteCard(asset) {
+function renderTeamCard(team) {
   return `
-    <article class="quote-card ${toneClass(asset.percentChange)}">
+    <article class="quote-card ${toneClass(team.performanceGap)}">
       <div class="quote-topline">
         <div>
-          <p class="symbol">${asset.symbol}</p>
-          <h3>${asset.label}</h3>
+          <p class="symbol">${team.symbol} | ${team.record}</p>
+          <h3>${team.team}</h3>
         </div>
-        <div class="pill ${toneClass(asset.percentChange)}">${formatPercent(asset.percentChange)}</div>
+        <div class="pill ${toneClass(team.performanceGap)}">${formatDelta(team.performanceGap)}</div>
       </div>
-      <p class="last-price">${formatPrice(asset.last)}</p>
-      <p class="thesis">${asset.thesis}</p>
+      <p class="last-price">Playoffs ${formatAmericanOdds(team.playoffOdds)} | Next game ${formatAmericanOdds(team.nextGameMoneyline)}</p>
+      <p class="thesis">${team.thesis}</p>
     </article>
   `;
 }
@@ -75,22 +80,26 @@ function renderQuoteCard(asset) {
 function renderMatrix(items) {
   scoreboard.innerHTML = `
     <div class="matrix-head">
-      <span>Asset</span>
-      <span>Last</span>
-      <span>Day move</span>
-      <span>Oil read-through</span>
+      <span>Team</span>
+      <span>Actual win%</span>
+      <span>Projected win%</span>
+      <span>Playoff implied</span>
+      <span>Next game implied</span>
+      <span>Market read</span>
     </div>
     ${items
       .map(
-        (asset) => `
+        (team) => `
           <article class="matrix-row">
             <div>
-              <strong>${asset.label}</strong>
-              <p>${asset.symbol}</p>
+              <strong>${team.team}</strong>
+              <p>${team.symbol} | ${team.record}</p>
             </div>
-            <div>${formatPrice(asset.last)}</div>
-            <div class="${toneClass(asset.percentChange)}">${formatPercent(asset.percentChange)}</div>
-            <div><span class="relationship ${asset.oilRelationship}">${asset.oilRelationship}</span></div>
+            <div>${formatPct(team.actualWinPct)}</div>
+            <div>${formatPct(team.projectedWinPct)}</div>
+            <div class="${toneClass(team.marketGap)}">${formatPct(team.playoffImpliedProbability)}</div>
+            <div>${formatPct(team.nextGameImpliedProbability)}</div>
+            <div><span class="relationship ${relationshipClass(team.marketRead)}">${team.marketRead}</span></div>
           </article>
         `
       )
@@ -98,49 +107,74 @@ function renderMatrix(items) {
   `;
 }
 
-function setGroup(target, items) {
-  target.innerHTML = items.map(renderQuoteCard).join("");
+function relationshipClass(label) {
+  if (label.includes("skeptical")) {
+    return "diverging";
+  }
+
+  if (label.includes("forgiving") || label.includes("favorite")) {
+    return "tracking";
+  }
+
+  return "neutral";
+}
+
+function setGroup(target, items, emptyText) {
+  target.innerHTML = items.length
+    ? items.map(renderTeamCard).join("")
+    : `<div class="empty-state">${emptyText}</div>`;
 }
 
 function renderDashboard(payload) {
   headline.textContent = `${payload.summary.headline} ${payload.summary.takeaway}`;
 
-  const wti = (payload.groups.oil || []).find((asset) => asset.symbol === "@CL.1");
-  oilPulse.className = `oil-pulse ${toneClass(wti?.percentChange)}`;
+  oilPulse.className = `oil-pulse ${toneClass(payload.summary.averages.playoffImpliedProbability - payload.summary.averages.projectedWinPct)}`;
   oilPulse.innerHTML = `
-    <span>${wti ? wti.label : "WTI Crude"}</span>
-    <strong>${wti ? formatPercent(wti.percentChange) : "--"}</strong>
+    <span>Average playoff implied probability</span>
+    <strong>${formatPct(payload.summary.averages.playoffImpliedProbability)}</strong>
   `;
 
   summaryBands.innerHTML = [
-    renderBand("Oil basket", payload.summary.averages.oil, "WTI, Brent, and USO"),
     renderBand(
-      "Energy shares",
-      payload.summary.averages.beneficiaries,
-      "XLE, XOP, XOM, and CVX"
+      "Actual board average",
+      payload.summary.averages.actualWinPct,
+      "Short-run record across the sample teams"
     ),
     renderBand(
-      "Broad market",
-      payload.summary.averages.broadMarket,
-      "SPY and QQQ as a quick risk barometer"
+      "Projected board average",
+      payload.summary.averages.projectedWinPct,
+      "Preseason win totals divided by 162"
     ),
     renderBand(
-      "Fuel-sensitive",
-      payload.summary.averages.consumers,
-      "DAL, UAL, and FDX"
+      "Playoff pricing",
+      payload.summary.averages.playoffImpliedProbability,
+      "How futures markets price postseason odds"
+    ),
+    renderBand(
+      "Next-game pricing",
+      payload.summary.averages.nextGameImpliedProbability,
+      "How moneylines treat the next matchup"
     )
   ].join("");
 
-  setGroup(oilGroup, payload.groups.oil || []);
-  setGroup(beneficiaryGroup, payload.groups.beneficiaries || []);
-  setGroup(broadMarketGroup, payload.groups.broadMarket || []);
-  setGroup(consumerGroup, payload.groups.consumers || []);
+  setGroup(oilGroup, payload.groups.contenders || [], "No heavy favorites in the current sample.");
+  setGroup(
+    beneficiaryGroup,
+    payload.groups.skepticalStarts || [],
+    "No teams are clearly outrunning their prices right now."
+  );
+  setGroup(
+    broadMarketGroup,
+    payload.groups.forgivingMarket || [],
+    "No teams are being strongly protected by the market in this sample."
+  );
+  setGroup(consumerGroup, payload.groups.longshots || [], "No longshots in the current sample.");
   renderMatrix(payload.scoreboard || []);
 
-  statusText.textContent = `Last synced ${new Intl.DateTimeFormat("en-US", {
+  statusText.textContent = `Last refreshed ${new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short"
-  }).format(new Date(payload.fetchedAt))}. Twelve Data quote coverage depends on your plan.`;
+  }).format(new Date(payload.fetchedAt))}. Sample values are illustrative so you can inspect the math directly.`;
 }
 
 function renderError(message) {
@@ -157,14 +191,14 @@ function renderError(message) {
 
 async function loadDashboard() {
   refreshButton.disabled = true;
-  statusText.textContent = "Refreshing market data...";
+  statusText.textContent = "Refreshing MLB market model...";
 
   try {
     const response = await fetch("/api/market-data");
     const payload = await response.json();
 
     if (!response.ok) {
-      throw new Error(payload.error || "Unable to fetch market data.");
+      throw new Error(payload.error || "Unable to fetch MLB market data.");
     }
 
     renderDashboard(payload);

@@ -1,54 +1,78 @@
-const TWELVE_DATA_BASE_URL = "https://api.twelvedata.com/quote";
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const GAMES_IN_SEASON = 162;
 
-const ASSETS = [
+const TEAMS = [
   {
-    symbol: "USO",
-    label: "United States Oil Fund",
-    bucket: "oil",
-    thesis: "Liquid ETF proxy for front-month crude exposure."
+    team: "Los Angeles Dodgers",
+    symbol: "LAD",
+    league: "NL",
+    division: "West",
+    wins: 6,
+    losses: 1,
+    preseasonWinTotal: 101.5,
+    playoffOdds: -900,
+    nextGameMoneyline: -185,
+    thesis: "Elite roster depth keeps the market above even a hot early-season record."
   },
   {
-    symbol: "BNO",
-    label: "United States Brent Oil Fund",
-    bucket: "oil",
-    thesis: "ETF proxy for Brent-linked crude exposure."
+    team: "New York Yankees",
+    symbol: "NYY",
+    league: "AL",
+    division: "East",
+    wins: 5,
+    losses: 2,
+    preseasonWinTotal: 90.5,
+    playoffOdds: -325,
+    nextGameMoneyline: -145,
+    thesis: "The market respects the underlying roster more than the tiny current sample."
   },
   {
-    symbol: "XLE",
-    label: "Energy Select Sector SPDR",
-    bucket: "beneficiaries",
-    thesis: "Large-cap U.S. energy sector."
+    team: "Atlanta Braves",
+    symbol: "ATL",
+    league: "NL",
+    division: "East",
+    wins: 3,
+    losses: 4,
+    preseasonWinTotal: 93.5,
+    playoffOdds: -275,
+    nextGameMoneyline: -155,
+    thesis: "A slow week does not erase the projection, so sportsbooks stay aggressive."
   },
   {
-    symbol: "XOM",
-    label: "Exxon Mobil",
-    bucket: "beneficiaries",
-    thesis: "Integrated oil major."
+    team: "Seattle Mariners",
+    symbol: "SEA",
+    league: "AL",
+    division: "West",
+    wins: 4,
+    losses: 3,
+    preseasonWinTotal: 85.5,
+    playoffOdds: -105,
+    nextGameMoneyline: -118,
+    thesis: "This is close to a fair middle case where record and market expectation nearly agree."
   },
   {
-    symbol: "SPY",
-    label: "S&P 500 ETF",
-    bucket: "broad-market",
-    thesis: "Broad U.S. equity benchmark."
+    team: "Miami Marlins",
+    symbol: "MIA",
+    league: "NL",
+    division: "East",
+    wins: 4,
+    losses: 2,
+    preseasonWinTotal: 72.5,
+    playoffOdds: 500,
+    nextGameMoneyline: 120,
+    thesis: "A strong first week lifts attention, but the market still prices them as a longshot."
   },
   {
-    symbol: "QQQ",
-    label: "Nasdaq 100 ETF",
-    bucket: "broad-market",
-    thesis: "Growth-heavy U.S. equities."
-  },
-  {
-    symbol: "DAL",
-    label: "Delta Air Lines",
-    bucket: "consumers",
-    thesis: "Airlines often face fuel-cost pressure when oil rises."
-  },
-  {
-    symbol: "FDX",
-    label: "FedEx",
-    bucket: "consumers",
-    thesis: "Transport and fuel-cost sensitivity."
+    team: "Chicago White Sox",
+    symbol: "CWS",
+    league: "AL",
+    division: "Central",
+    wins: 2,
+    losses: 5,
+    preseasonWinTotal: 62.5,
+    playoffOdds: 1600,
+    nextGameMoneyline: 150,
+    thesis: "Weak season expectations keep both futures and daily prices skeptical."
   }
 ];
 
@@ -57,60 +81,28 @@ let cache = {
   expiresAt: 0
 };
 
-function getApiKey() {
-  const apiKey = process.env.TWELVE_DATA_API_KEY;
-
-  if (!apiKey) {
-    const error = new Error("TWELVE_DATA_API_KEY is not configured.");
-    error.statusCode = 500;
-    throw error;
-  }
-
-  return apiKey;
-}
-
-function quoteUrl(symbol) {
-  const url = new URL(TWELVE_DATA_BASE_URL);
-  url.searchParams.set("symbol", symbol);
-  url.searchParams.set("interval", "1day");
-  url.searchParams.set("apikey", getApiKey());
-  return url.toString();
-}
-
 function sendJson(res, statusCode, body) {
   res.status(statusCode).setHeader("Content-Type", "application/json");
   res.end(JSON.stringify(body));
 }
 
-function toNumber(value) {
-  if (value === undefined || value === null || value === "") {
+function americanToImpliedProbability(odds) {
+  if (!Number.isFinite(odds) || odds === 0) {
     return null;
   }
 
-  const numeric = Number(String(value).replace(/,/g, ""));
-  return Number.isFinite(numeric) ? numeric : null;
+  if (odds > 0) {
+    return 100 / (odds + 100);
+  }
+
+  return Math.abs(odds) / (Math.abs(odds) + 100);
 }
 
-function normalizeQuote(rawQuote, asset) {
-  return {
-    ...asset,
-    symbol: rawQuote.symbol || asset.symbol,
-    name: rawQuote.name || asset.label,
-    last: toNumber(rawQuote.close ?? rawQuote.price),
-    change: toNumber(rawQuote.change),
-    percentChange: toNumber(rawQuote.percent_change),
-    open: toNumber(rawQuote.open),
-    high: toNumber(rawQuote.high),
-    low: toNumber(rawQuote.low),
-    prevClose: toNumber(rawQuote.previous_close),
-    volume: toNumber(rawQuote.volume),
-    status: rawQuote.is_market_open ? "OPEN" : "CLOSED",
-    sourceUrl: `https://twelvedata.com/market-data/${encodeURIComponent(asset.symbol)}`
-  };
+function toPercent(value) {
+  return value === null ? null : value * 100;
 }
 
-function averagePercent(items) {
-  const values = items.map((item) => item.percentChange).filter((value) => value !== null);
+function average(values) {
   if (!values.length) {
     return null;
   }
@@ -118,140 +110,106 @@ function averagePercent(items) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function sentimentFromChange(value) {
-  if (value === null) {
-    return "flat";
+function buildTeam(team) {
+  const gamesPlayed = team.wins + team.losses;
+  const actualWinPct = gamesPlayed ? team.wins / gamesPlayed : null;
+  const projectedWinPct = team.preseasonWinTotal / GAMES_IN_SEASON;
+  const playoffImpliedProbability = americanToImpliedProbability(team.playoffOdds);
+  const nextGameImpliedProbability = americanToImpliedProbability(team.nextGameMoneyline);
+  const performanceGap = actualWinPct === null ? null : actualWinPct - projectedWinPct;
+  const marketGap = playoffImpliedProbability - projectedWinPct;
+
+  let marketRead = "Balanced";
+  if ((performanceGap ?? 0) > 0.08 && marketGap < 0) {
+    marketRead = "Hot start, market skeptical";
+  } else if ((performanceGap ?? 0) < -0.05 && marketGap > 0.04) {
+    marketRead = "Cold start, market forgiving";
+  } else if ((nextGameImpliedProbability ?? 0) > 0.58) {
+    marketRead = "Priced like a nightly favorite";
+  } else if ((nextGameImpliedProbability ?? 0) < 0.45) {
+    marketRead = "Priced like a nightly underdog";
   }
 
-  if (value > 0.35) {
-    return "up";
-  }
-
-  if (value < -0.35) {
-    return "down";
-  }
-
-  return "flat";
+  return {
+    ...team,
+    record: `${team.wins}-${team.losses}`,
+    actualWinPct,
+    projectedWinPct,
+    playoffImpliedProbability,
+    nextGameImpliedProbability,
+    performanceGap,
+    marketGap,
+    marketRead
+  };
 }
 
-function summarize(assets) {
-  const oil = assets.filter((asset) => asset.bucket === "oil");
-  const beneficiaries = assets.filter((asset) => asset.bucket === "beneficiaries");
-  const broad = assets.filter((asset) => asset.bucket === "broad-market");
-  const consumers = assets.filter((asset) => asset.bucket === "consumers");
+function summarize(teams) {
+  const actualValues = teams.map((team) => team.actualWinPct).filter((value) => value !== null);
+  const projectedValues = teams.map((team) => team.projectedWinPct);
+  const playoffValues = teams.map((team) => team.playoffImpliedProbability);
+  const nextGameValues = teams.map((team) => team.nextGameImpliedProbability);
 
-  const oilMove = sentimentFromChange(averagePercent(oil));
-  const beneficiaryAvg = averagePercent(beneficiaries);
-  const consumerAvg = averagePercent(consumers);
-  const broadAvg = averagePercent(broad);
+  const overperformers = teams.filter((team) => (team.performanceGap ?? 0) > 0.08).length;
+  const skepticalStarts = teams.filter(
+    (team) => (team.performanceGap ?? 0) > 0.08 && (team.marketGap ?? 0) < 0
+  ).length;
 
-  let headline = "Oil and cross-asset signals are mixed.";
-  if (oilMove === "up") {
-    headline = "Oil-linked ETFs are pushing higher and the dashboard is checking who is keeping up.";
-  } else if (oilMove === "down") {
-    headline = "Oil-linked ETFs are fading and the dashboard is checking where the pressure is spreading.";
-  }
+  let headline = "Sportsbooks treat MLB win percentage as context, not as the final price.";
+  let takeaway = "Preseason strength and game-specific matchup details still dominate most odds.";
 
-  let takeaway = "Leadership is scattered across the watchlist.";
-  if ((beneficiaryAvg ?? 0) > 0 && (consumerAvg ?? 0) < 0) {
-    takeaway = "Energy-linked names are outperforming while fuel-sensitive stocks are lagging.";
-  } else if ((beneficiaryAvg ?? 0) < 0 && (consumerAvg ?? 0) > 0) {
-    takeaway = "Oil-sensitive consumers are catching a break while energy producers are softer.";
-  } else if ((broadAvg ?? 0) < 0 && oilMove === "up") {
-    takeaway = "Higher oil proxies are coinciding with a weaker broad-market tone.";
+  if (skepticalStarts > 0) {
+    takeaway =
+      "Several fast starters still trade below their current win rate because betting apps fade tiny samples.";
+  } else if (overperformers === 0) {
+    takeaway =
+      "This board is mostly aligned, showing how quickly market expectations can stabilize around consensus teams.";
   }
 
   return {
     headline,
     takeaway,
-    oilDirection: oilMove,
     averages: {
-      oil: averagePercent(oil),
-      beneficiaries: beneficiaryAvg,
-      consumers: consumerAvg,
-      broadMarket: broadAvg
+      actualWinPct: average(actualValues),
+      projectedWinPct: average(projectedValues),
+      playoffImpliedProbability: average(playoffValues),
+      nextGameImpliedProbability: average(nextGameValues)
+    },
+    counts: {
+      overperformers,
+      skepticalStarts,
+      favorites: teams.filter((team) => (team.nextGameImpliedProbability ?? 0) >= 0.55).length
     }
   };
 }
 
-function scoreAgainstOil(asset, oilDirection) {
-  if (asset.percentChange === null || oilDirection === "flat") {
-    return "neutral";
-  }
-
-  if (asset.bucket === "beneficiaries") {
-    return oilDirection === "up" && asset.percentChange > 0
-      ? "tracking"
-      : oilDirection === "down" && asset.percentChange < 0
-        ? "tracking"
-        : "diverging";
-  }
-
-  if (asset.bucket === "consumers") {
-    return oilDirection === "up" && asset.percentChange < 0
-      ? "tracking"
-      : oilDirection === "down" && asset.percentChange > 0
-        ? "tracking"
-        : "diverging";
-  }
-
-  return "neutral";
-}
-
-async function fetchQuote(asset) {
-  const response = await fetch(quoteUrl(asset.symbol));
-
-  if (!response.ok) {
-    throw new Error(
-      `Twelve Data quote request failed for ${asset.symbol} with status ${response.status}.`
-    );
-  }
-
-  const text = await response.text();
-  let payload;
-
-  try {
-    payload = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Twelve Data returned non-JSON for ${asset.symbol}: ${text.slice(0, 140)}`);
-  }
-
-  if (payload.status === "error") {
-    throw new Error(`${asset.symbol}: ${payload.message || "Twelve Data returned an error."}`);
-  }
-
-  return normalizeQuote(payload, asset);
-}
-
-async function buildPayload() {
-  const quotes = await Promise.all(ASSETS.map(fetchQuote));
-
-  const preliminary = quotes.map((asset) => ({
-    ...asset,
-    oilRelationship: scoreAgainstOil(asset, "flat")
-  }));
-
-  const summary = summarize(preliminary);
-  const scoreboard = preliminary.map((asset) => ({
-    ...asset,
-    oilRelationship: scoreAgainstOil(asset, summary.oilDirection)
-  }));
+function buildPayload() {
+  const teams = TEAMS.map(buildTeam);
+  const summary = summarize(teams);
 
   return {
     fetchedAt: new Date().toISOString(),
     source: {
-      name: "Twelve Data quote API",
-      quoteUrl: "https://api.twelvedata.com/quote",
-      note: "Cached for 5 minutes to stay within free-tier API limits."
+      name: "Illustrative MLB betting model",
+      note: "Sample April 2026 team records paired with preseason win totals and representative American odds."
     },
+    formulaGuide: [
+      "Actual win% = wins / games played",
+      "Projected win% = preseason win total / 162",
+      "Implied probability from negative odds = abs(odds) / (abs(odds) + 100)",
+      "Implied probability from positive odds = 100 / (odds + 100)"
+    ],
     summary,
     groups: {
-      oil: scoreboard.filter((asset) => asset.bucket === "oil"),
-      beneficiaries: scoreboard.filter((asset) => asset.bucket === "beneficiaries"),
-      broadMarket: scoreboard.filter((asset) => asset.bucket === "broad-market"),
-      consumers: scoreboard.filter((asset) => asset.bucket === "consumers")
+      contenders: teams.filter((team) => team.playoffImpliedProbability >= 0.65),
+      skepticalStarts: teams.filter(
+        (team) => (team.performanceGap ?? 0) > 0.08 && (team.marketGap ?? 0) < 0
+      ),
+      forgivingMarket: teams.filter(
+        (team) => (team.performanceGap ?? 0) < -0.05 && (team.marketGap ?? 0) > 0.04
+      ),
+      longshots: teams.filter((team) => team.playoffImpliedProbability < 0.3)
     },
-    scoreboard
+    scoreboard: teams
   };
 }
 
@@ -265,7 +223,7 @@ module.exports = async function handler(req, res) {
       return sendJson(res, 200, cache.payload);
     }
 
-    const payload = await buildPayload();
+    const payload = buildPayload();
     cache = {
       payload,
       expiresAt: Date.now() + CACHE_TTL_MS
@@ -273,8 +231,8 @@ module.exports = async function handler(req, res) {
 
     return sendJson(res, 200, payload);
   } catch (error) {
-    return sendJson(res, error.statusCode || 500, {
-      error: error.message || "Unable to load market data."
+    return sendJson(res, 500, {
+      error: error.message || "Unable to load MLB betting data."
     });
   }
 };

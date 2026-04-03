@@ -1,30 +1,38 @@
-# Oil Shock Dashboard
+# MLB Betting Market Map
 
-A lightweight dashboard that tracks oil-linked ETFs and shows how their moves may be affecting other markets and stocks.
+A lightweight dashboard for comparing MLB team performance with the way sportsbooks price those teams.
 
-## Data source
+## What it measures
 
-This app now uses the official Twelve Data quote API:
+- `Actual win%`: wins divided by games played
+- `Projected win%`: preseason win total divided by `162`
+- `Playoff implied probability`: converted from American odds
+- `Next-game implied probability`: converted from a representative moneyline
 
-- Quote endpoint: [https://api.twelvedata.com/quote](https://api.twelvedata.com/quote)
-- Docs: [https://twelvedata.com/docs](https://twelvedata.com/docs)
-- Bulk requests support: [https://support.twelvedata.com/en/articles/5203360-bulk-requests](https://support.twelvedata.com/en/articles/5203360-bulk-requests)
+This helps answer the core question: how much of a team's current win percentage is actually reflected in betting apps?
 
-## What it shows
+## Current data model
 
-- Oil proxies: `USO`, `BNO`
-- Energy beneficiaries: `XLE`, `XOP`, `XOM`, `CVX`
-- Broad market checks: `SPY`, `QQQ`
-- Fuel-sensitive names: `DAL`, `UAL`, `FDX`
-- An oil-impact matrix showing whether each asset is tracking or diverging from the current oil direction
+The API uses an illustrative April 2026 sample rather than a live sportsbook feed. Each team entry contains:
 
-## Setup
+- early-season record
+- preseason win total
+- playoff odds
+- next-game moneyline
+- a short interpretation of how the market is treating that team
 
-Add this environment variable in Vercel:
+## Key formulas
 
-`TWELVE_DATA_API_KEY`
+- Negative American odds to implied probability: `abs(odds) / (abs(odds) + 100)`
+- Positive American odds to implied probability: `100 / (odds + 100)`
+- Performance gap: `actual win% - projected win%`
+- Market gap: `playoff implied probability - projected win%`
+
+## Extending it
+
+To turn this into a live tool, replace the sample `TEAMS` array in [api/market-data.js](/C:/Users/user/Documents/New%20project/api/market-data.js) with a feed from an MLB standings source and a sportsbook odds source, then keep the same formulas.
 
 ## Notes
 
-- Twelve Data coverage and freshness depend on your plan and each symbol's eligibility.
+- No environment variables are required in the current version.
 - This environment does not have Node.js installed, so the app was updated but not run locally here.
