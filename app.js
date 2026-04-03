@@ -140,7 +140,7 @@ function renderDashboard(payload) {
   statusText.textContent = `Last synced ${new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short"
-  }).format(new Date(payload.fetchedAt))}. CNBC quote data is delayed.`;
+  }).format(new Date(payload.fetchedAt))}. Twelve Data quote coverage depends on your plan.`;
 }
 
 function renderError(message) {
@@ -157,7 +157,7 @@ function renderError(message) {
 
 async function loadDashboard() {
   refreshButton.disabled = true;
-  statusText.textContent = "Refreshing CNBC market data...";
+  statusText.textContent = "Refreshing market data...";
 
   try {
     const response = await fetch("/api/market-data");
