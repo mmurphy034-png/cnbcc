@@ -1,4 +1,5 @@
 const TWELVE_DATA_BASE_URL = "https://api.twelvedata.com/quote";
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
 const ASSETS = [
   {
@@ -20,20 +21,8 @@ const ASSETS = [
     thesis: "Large-cap U.S. energy sector."
   },
   {
-    symbol: "XOP",
-    label: "S&P Oil & Gas E&P ETF",
-    bucket: "beneficiaries",
-    thesis: "Higher-beta exploration and production names."
-  },
-  {
     symbol: "XOM",
     label: "Exxon Mobil",
-    bucket: "beneficiaries",
-    thesis: "Integrated oil major."
-  },
-  {
-    symbol: "CVX",
-    label: "Chevron",
     bucket: "beneficiaries",
     thesis: "Integrated oil major."
   },
@@ -56,18 +45,17 @@ const ASSETS = [
     thesis: "Airlines often face fuel-cost pressure when oil rises."
   },
   {
-    symbol: "UAL",
-    label: "United Airlines",
-    bucket: "consumers",
-    thesis: "Another fuel-sensitive airline proxy."
-  },
-  {
     symbol: "FDX",
     label: "FedEx",
     bucket: "consumers",
     thesis: "Transport and fuel-cost sensitivity."
   }
 ];
+
+let cache = {
+  payload: null,
+  expiresAt: 0
+};
 
 function getApiKey() {
   const apiKey = process.env.TWELVE_DATA_API_KEY;
@@ -210,68 +198,80 @@ function scoreAgainstOil(asset, oilDirection) {
   return "neutral";
 }
 
+async function fetchQuote(asset) {
+  const response = await fetch(quoteUrl(asset.symbol));
+
+  if (!response.ok) {
+    throw new Error(
+      `Twelve Data quote request failed for ${asset.symbol} with status ${response.status}.`
+    );
+  }
+
+  const text = await response.text();
+  let payload;
+
+  try {
+    payload = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Twelve Data returned non-JSON for ${asset.symbol}: ${text.slice(0, 140)}`);
+  }
+
+  if (payload.status === "error") {
+    throw new Error(`${asset.symbol}: ${payload.message || "Twelve Data returned an error."}`);
+  }
+
+  return normalizeQuote(payload, asset);
+}
+
+async function buildPayload() {
+  const quotes = await Promise.all(ASSETS.map(fetchQuote));
+
+  const preliminary = quotes.map((asset) => ({
+    ...asset,
+    oilRelationship: scoreAgainstOil(asset, "flat")
+  }));
+
+  const summary = summarize(preliminary);
+  const scoreboard = preliminary.map((asset) => ({
+    ...asset,
+    oilRelationship: scoreAgainstOil(asset, summary.oilDirection)
+  }));
+
+  return {
+    fetchedAt: new Date().toISOString(),
+    source: {
+      name: "Twelve Data quote API",
+      quoteUrl: "https://api.twelvedata.com/quote",
+      note: "Cached for 5 minutes to stay within free-tier API limits."
+    },
+    summary,
+    groups: {
+      oil: scoreboard.filter((asset) => asset.bucket === "oil"),
+      beneficiaries: scoreboard.filter((asset) => asset.bucket === "beneficiaries"),
+      broadMarket: scoreboard.filter((asset) => asset.bucket === "broad-market"),
+      consumers: scoreboard.filter((asset) => asset.bucket === "consumers")
+    },
+    scoreboard
+  };
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
     return sendJson(res, 405, { error: "Method not allowed." });
   }
 
   try {
-    const quotes = await Promise.all(
-      ASSETS.map(async (asset) => {
-        const response = await fetch(quoteUrl(asset.symbol));
+    if (cache.payload && Date.now() < cache.expiresAt) {
+      return sendJson(res, 200, cache.payload);
+    }
 
-        if (!response.ok) {
-          throw new Error(
-            `Twelve Data quote request failed for ${asset.symbol} with status ${response.status}.`
-          );
-        }
+    const payload = await buildPayload();
+    cache = {
+      payload,
+      expiresAt: Date.now() + CACHE_TTL_MS
+    };
 
-        const text = await response.text();
-        let payload;
-
-        try {
-          payload = JSON.parse(text);
-        } catch (error) {
-          throw new Error(
-            `Twelve Data returned non-JSON for ${asset.symbol}: ${text.slice(0, 140)}`
-          );
-        }
-
-        if (payload.status === "error") {
-          throw new Error(`${asset.symbol}: ${payload.message || "Twelve Data returned an error."}`);
-        }
-
-        return normalizeQuote(payload, asset);
-      })
-    );
-
-    const scoreboard = quotes.map((asset) => ({
-      ...asset,
-      oilRelationship: scoreAgainstOil(asset, "flat")
-    }));
-
-    const summary = summarize(scoreboard);
-    const finalScoreboard = scoreboard.map((asset) => ({
-      ...asset,
-      oilRelationship: scoreAgainstOil(asset, summary.oilDirection)
-    }));
-
-    return sendJson(res, 200, {
-      fetchedAt: new Date().toISOString(),
-      source: {
-        name: "Twelve Data quote API",
-        quoteUrl: "https://api.twelvedata.com/quote",
-        note: "Quote coverage and timeliness depend on your Twelve Data plan and symbol eligibility."
-      },
-      summary,
-      groups: {
-        oil: finalScoreboard.filter((asset) => asset.bucket === "oil"),
-        beneficiaries: finalScoreboard.filter((asset) => asset.bucket === "beneficiaries"),
-        broadMarket: finalScoreboard.filter((asset) => asset.bucket === "broad-market"),
-        consumers: finalScoreboard.filter((asset) => asset.bucket === "consumers")
-      },
-      scoreboard: finalScoreboard
-    });
+    return sendJson(res, 200, payload);
   } catch (error) {
     return sendJson(res, error.statusCode || 500, {
       error: error.message || "Unable to load market data."
