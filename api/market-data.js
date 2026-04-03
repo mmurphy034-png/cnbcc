@@ -147,7 +147,29 @@ function normalizeQuote(rawQuote) {
     status: getField(quick, ["curmktstatus", "marketStatus"]) || "UNKNOWN",
     sourceUrl: `https://www.cnbc.com/quotes/${encodeURIComponent(symbol)}`
   };
+}function toQuoteArray(payload) {
+  const candidates = [
+    payload?.ExtendedQuoteResult?.ExtendedQuote,
+    payload?.QuickQuoteResult?.QuickQuote,
+    payload?.ExtendedQuoteResult?.quotes,
+    payload?.QuickQuoteResult?.quotes,
+    payload?.quote,
+    payload?.quotes
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate;
+    }
+
+    if (candidate && typeof candidate === "object") {
+      return [candidate];
+    }
+  }
+
+  return [];
 }
+
 
 function attachMetadata(assetsBySymbol) {
   return ASSETS.map((asset) => ({
