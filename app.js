@@ -69,6 +69,25 @@ function formatSpread(value) {
   return value > 0 ? `+${value}` : `${value}`;
 }
 
+function formatSpreadWithPrice(spread, price) {
+  if ((spread === null || spread === undefined) && (price === null || price === undefined)) {
+    return "--";
+  }
+
+  const spreadText = formatSpread(spread);
+  const priceText = formatMoneyline(price);
+
+  if (spreadText === "--") {
+    return priceText;
+  }
+
+  if (priceText === "--") {
+    return spreadText;
+  }
+
+  return `${spreadText} (${priceText})`;
+}
+
 function formatGap(value) {
   if (value === null || value === undefined) {
     return "--";
@@ -198,7 +217,7 @@ function renderMatchupCard(game) {
           <span class="team-record">${game.away.record || "--"}</span>
           <p>${game.away.pitcher.name}</p>
           <span>ERA ${formatNumber(game.away.pitcher.era)} | WHIP ${formatNumber(game.away.pitcher.whip)}</span>
-          <span>Run line ${formatSpread(game.away.medianSpread)}</span>
+          <span>Run line ${formatSpreadWithPrice(game.away.medianSpread, game.away.medianSpreadPrice)}</span>
           <span>Bullpen ${game.away.bullpen.state} (${formatNumber(game.away.bullpen.innings, 1)} IP yesterday)</span>
         </div>
         <div class="matchup-meta">
@@ -214,7 +233,7 @@ function renderMatchupCard(game) {
           <span class="team-record">${game.home.record || "--"}</span>
           <p>${game.home.pitcher.name}</p>
           <span>ERA ${formatNumber(game.home.pitcher.era)} | WHIP ${formatNumber(game.home.pitcher.whip)}</span>
-          <span>Run line ${formatSpread(game.home.medianSpread)}</span>
+          <span>Run line ${formatSpreadWithPrice(game.home.medianSpread, game.home.medianSpreadPrice)}</span>
           <span>Bullpen ${game.home.bullpen.state} (${formatNumber(game.home.bullpen.innings, 1)} IP yesterday)</span>
         </div>
       </div>

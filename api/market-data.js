@@ -156,6 +156,27 @@ function median(values) {
   return sorted[middle];
 }
 
+function medianBy(values, key) {
+  if (!values.length) {
+    return null;
+  }
+
+  const sorted = [...values].sort((left, right) => left[key] - right[key]);
+  const middle = Math.floor(sorted.length / 2);
+
+  if (sorted.length % 2 === 0) {
+    const left = sorted[middle - 1];
+    const right = sorted[middle];
+
+    return {
+      ...left,
+      [key]: (left[key] + right[key]) / 2
+    };
+  }
+
+  return sorted[middle];
+}
+
 function americanToImpliedProbability(odds) {
   if (!Number.isFinite(odds) || odds === 0) {
     return null;
@@ -345,7 +366,7 @@ async function fetchOddsByTeam() {
     const groupedSpreads = {};
     for (const row of spreadRows) {
       const code = normalizeTeamName(row.teamName);
-      if (!code || !Number.isFinite(row.point)) {
+      if (!code || !Number.isFinite(row.point) || !Number.isFinite(row.price)) {
         continue;
       }
 
@@ -353,17 +374,22 @@ async function fetchOddsByTeam() {
         groupedSpreads[code] = [];
       }
 
-      groupedSpreads[code].push(row.point);
+      groupedSpreads[code].push({
+        point: row.point,
+        price: row.price
+      });
     }
 
     Object.entries(grouped).forEach(([code, prices]) => {
       const impliedValues = prices
         .map((price) => americanToImpliedProbability(price))
         .filter((value) => value !== null);
+      const spreadBook = medianBy(groupedSpreads[code] || [], "price");
 
       byTeam[code] = {
         medianMoneyline: median(prices),
-        medianSpread: median(groupedSpreads[code] || []),
+        medianSpread: spreadBook?.point ?? null,
+        medianSpreadPrice: spreadBook?.price ?? null,
         averageImpliedWinProbability: average(impliedValues),
         bookmakersCount: prices.length,
         commenceTime: event.commence_time || null,
@@ -662,6 +688,7 @@ async function buildPayload() {
         averageImpliedWinProbability,
         medianMoneyline: odds?.medianMoneyline ?? null,
         medianSpread: odds?.medianSpread ?? null,
+        medianSpreadPrice: odds?.medianSpreadPrice ?? null,
         bookmakersCount: odds?.bookmakersCount ?? 0,
         nextMarketTime: odds?.commenceTime ?? null,
         matchup: odds?.matchup ?? "No current moneyline found",
@@ -687,6 +714,7 @@ async function buildPayload() {
     away: {
       ...game.away,
       medianSpread: oddsByTeam[game.away.code]?.medianSpread ?? null,
+      medianSpreadPrice: oddsByTeam[game.away.code]?.medianSpreadPrice ?? null,
       record:
         standingsById[game.away.id]?.wins !== undefined
           ? `${standingsById[game.away.id].wins}-${standingsById[game.away.id].losses}`
@@ -702,6 +730,7 @@ async function buildPayload() {
     home: {
       ...game.home,
       medianSpread: oddsByTeam[game.home.code]?.medianSpread ?? null,
+      medianSpreadPrice: oddsByTeam[game.home.code]?.medianSpreadPrice ?? null,
       record:
         standingsById[game.home.id]?.wins !== undefined
           ? `${standingsById[game.home.id].wins}-${standingsById[game.home.id].losses}`
