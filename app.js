@@ -1,4 +1,5 @@
 const headline = document.getElementById("headline");
+const splitGrid = document.getElementById("splitGrid");
 const snapshotGrid = document.getElementById("snapshotGrid");
 const matchupsGrid = document.getElementById("matchupsGrid");
 const scoreboard = document.getElementById("scoreboard");
@@ -98,6 +99,34 @@ function formatGap(value) {
   return `${prefix}${points.toFixed(1)} pts`;
 }
 
+function formatMetric(value, digits = 3) {
+  if (value === null || value === undefined) {
+    return "--";
+  }
+
+  return Number(value).toFixed(digits);
+}
+
+function formatNumber(value, digits = 2) {
+  if (value === null || value === undefined) {
+    return "--";
+  }
+
+  return Number(value).toFixed(digits);
+}
+
+function handLabel(hand) {
+  if (hand === "L") {
+    return "LHP";
+  }
+
+  if (hand === "R") {
+    return "RHP";
+  }
+
+  return "SP";
+}
+
 function toneClass(value) {
   if (value === null || value === undefined) {
     return "neutral";
@@ -125,22 +154,6 @@ function probabilityBar(label, value, variant) {
       </div>
       <div class="probability-track">
         <span class="probability-fill ${variant}" style="width:${width}%"></span>
-      </div>
-    </div>
-  `;
-}
-
-function centeredProbabilityBar(label, value, side) {
-  const width = value === null || value === undefined ? 0 : Math.max(0, Math.min(50, value * 50));
-
-  return `
-    <div class="probability-block centered-block">
-      <div class="probability-label">
-        <span>${label}</span>
-        <strong>${formatPct(value)}</strong>
-      </div>
-      <div class="probability-track centered-track">
-        <span class="probability-fill centered-fill ${side}" style="width:${width}%"></span>
       </div>
     </div>
   `;
@@ -201,32 +214,40 @@ function renderSnapshotCard(label, value, helper, variant) {
   `;
 }
 
-function renderTeamCard(team) {
+function renderSplitCard(game) {
+  const awayPitcherHand = handLabel(game.home.pitcher.hand);
+  const homePitcherHand = handLabel(game.away.pitcher.hand);
+  const awayPitcherAllowed = game.home.pitcher.allowedWobaByBatterHand || {};
+  const homePitcherAllowed = game.away.pitcher.allowedWobaByBatterHand || {};
+
   return `
-    <article class="team-card ${toneClass(team.marketVsRecordGap)}">
-      <div class="team-card-top">
+    <article class="split-card">
+      <div class="split-card-top">
+        <h3>${game.matchup}</h3>
+        <span class="eyebrow">${game.gameStatus || "Scheduled"}</span>
+      </div>
+      <div class="split-row">
         <div>
-          <p class="symbol">${team.code} | ${team.wins}-${team.losses}</p>
-          <h3>${team.team}</h3>
+          <p class="symbol">${game.away.code} bats vs ${awayPitcherHand}</p>
+          <strong>${formatMetric(game.away.hittingWobaVsPitcherHand)}</strong>
         </div>
-        <div class="pill ${toneClass(team.marketVsRecordGap)}">${formatGap(team.marketVsRecordGap)}</div>
+        <div class="split-meta">
+          <span>${game.home.pitcher.name} allowed</span>
+          <span>LHB ${formatMetric(awayPitcherAllowed.vl)} | RHB ${formatMetric(awayPitcherAllowed.vr)}</span>
+        </div>
       </div>
-      <div class="probability-stack">
-        ${probabilityBar("Record win%", team.winPct, "actual")}
-        ${probabilityBar("Market implied", team.averageImpliedWinProbability, "market")}
+      <div class="split-row">
+        <div>
+          <p class="symbol">${game.home.code} bats vs ${homePitcherHand}</p>
+          <strong>${formatMetric(game.home.hittingWobaVsPitcherHand)}</strong>
+        </div>
+        <div class="split-meta">
+          <span>${game.away.pitcher.name} allowed</span>
+          <span>LHB ${formatMetric(homePitcherAllowed.vl)} | RHB ${formatMetric(homePitcherAllowed.vr)}</span>
+        </div>
       </div>
-      <p class="last-price">Median moneyline ${formatMoneyline(team.medianMoneyline)} across ${team.bookmakersCount} books</p>
-      <p class="thesis">${team.signal}. ${team.matchup}</p>
     </article>
   `;
-}
-
-function formatNumber(value, digits = 2) {
-  if (value === null || value === undefined) {
-    return "--";
-  }
-
-  return Number(value).toFixed(digits);
 }
 
 function renderMatchupCard(game) {
@@ -317,14 +338,12 @@ function renderScoreboard(items) {
   `;
 }
 
-function setGroup(target, items, emptyText) {
-  target.innerHTML = items.length
-    ? items.map(renderTeamCard).join("")
-    : `<div class="empty-state">${emptyText}</div>`;
-}
-
 function renderDashboard(payload) {
   headline.textContent = "MLB ⚾";
+
+  splitGrid.innerHTML = (payload.matchups || []).length
+    ? (payload.matchups || []).map(renderSplitCard).join("")
+    : `<div class="empty-state">No handedness split matchups found for today.</div>`;
 
   snapshotGrid.innerHTML = [
     renderSnapshotCard(
@@ -356,6 +375,7 @@ function renderDashboard(payload) {
 
 function renderError(message) {
   headline.textContent = "MLB ⚾";
+  splitGrid.innerHTML = "";
   snapshotGrid.innerHTML = `<div class="empty-state">${message}</div>`;
   matchupsGrid.innerHTML = "";
   scoreboard.innerHTML = "";

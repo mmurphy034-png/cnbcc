@@ -2,6 +2,7 @@ const MLB_STANDINGS_URL = "https://statsapi.mlb.com/api/v1/standings";
 const MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule";
 const MLB_BOXSCORE_URL = "https://statsapi.mlb.com/api/v1/game";
 const MLB_PEOPLE_URL = "https://statsapi.mlb.com/api/v1/people";
+const MLB_TEAMS_URL = "https://statsapi.mlb.com/api/v1/teams";
 const ODDS_API_BASE_URL = "https://api.the-odds-api.com/v4/sports/baseball_mlb/odds";
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -213,6 +214,30 @@ function buildPeopleStatsUrl(personId, season) {
   return url.toString();
 }
 
+function buildPitcherSplitUrl(personId, season) {
+  const url = new URL(`${MLB_PEOPLE_URL}/${personId}/stats`);
+  url.searchParams.set("stats", "statSplits");
+  url.searchParams.set("group", "pitching");
+  url.searchParams.set("season", String(season));
+  url.searchParams.set("gameType", "R");
+  url.searchParams.set("sitCodes", "vl,vr");
+  return url.toString();
+}
+
+function buildPersonUrl(personId) {
+  return `${MLB_PEOPLE_URL}/${personId}`;
+}
+
+function buildTeamHittingSplitUrl(teamId, season) {
+  const url = new URL(`${MLB_TEAMS_URL}/${teamId}/stats`);
+  url.searchParams.set("stats", "statSplits");
+  url.searchParams.set("group", "hitting");
+  url.searchParams.set("season", String(season));
+  url.searchParams.set("gameType", "R");
+  url.searchParams.set("sitCodes", "vl,vr");
+  return url.toString();
+}
+
 function buildBoxscoreUrl(gamePk) {
   return `${MLB_BOXSCORE_URL}/${gamePk}/boxscore`;
 }
@@ -254,6 +279,66 @@ function inningsStringToNumber(value) {
   }
 
   return wholeValue + partialValue / 3;
+}
+
+function statNumber(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const numeric = Number(String(value).replace(/,/g, ""));
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function normalizeSplitCode(rawSplit) {
+  const splitValue = String(
+    rawSplit?.code ||
+      rawSplit?.value ||
+      rawSplit?.description ||
+      rawSplit?.displayName ||
+      rawSplit?.abbreviation ||
+      ""
+  )
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
+
+  if (splitValue.includes("vl") || splitValue.includes("vsleft") || splitValue.includes("left")) {
+    return "vl";
+  }
+
+  if (splitValue.includes("vr") || splitValue.includes("vsright") || splitValue.includes("right")) {
+    return "vr";
+  }
+
+  return null;
+}
+
+function extractSplitWobaMap(payload) {
+  const statsArrays = [
+    ...(payload?.stats || []),
+    ...(payload?.people?.[0]?.stats || [])
+  ];
+  const splits = statsArrays.flatMap((entry) => entry?.splits || []);
+  const byHand = {};
+
+  for (const split of splits) {
+    const code = normalizeSplitCode(split?.split);
+    if (!code) {
+      continue;
+    }
+
+    const stat = split?.stat || {};
+    const woba =
+      statNumber(stat.woba) ??
+      statNumber(stat.wOBA) ??
+      statNumber(stat.weightedOnBaseAverage);
+
+    if (woba !== null) {
+      byHand[code] = woba;
+    }
+  }
+
+  return byHand;
 }
 
 async function fetchStandings() {
@@ -448,21 +533,28 @@ function summarize(teams) {
   };
 }
 
-async function fetchPitcherSeason(personId, season) {
+async function fetchPitcherProfile(personId, season) {
   if (!personId) {
     return null;
   }
 
-  const payload = await fetchJson(buildPeopleStatsUrl(personId, season));
-  const split = payload.stats?.[0]?.splits?.[0] || null;
+  const [seasonPayload, splitPayload, personPayload] = await Promise.all([
+    fetchJson(buildPeopleStatsUrl(personId, season)),
+    fetchJson(buildPitcherSplitUrl(personId, season)).catch(() => ({ stats: [] })),
+    fetchJson(buildPersonUrl(personId)).catch(() => ({ people: [] }))
+  ]);
+  const split = seasonPayload.stats?.[0]?.splits?.[0] || null;
   const stat = split?.stat || {};
+  const person = personPayload.people?.[0] || {};
 
   return {
     id: personId,
     era: Number(stat.era || 0) || null,
     whip: Number(stat.whip || 0) || null,
     strikeouts: Number(stat.strikeOuts || 0) || null,
-    inningsPitched: inningsStringToNumber(stat.inningsPitched || 0)
+    inningsPitched: inningsStringToNumber(stat.inningsPitched || 0),
+    hand: person.pitchHand?.code || null,
+    allowedWobaByBatterHand: extractSplitWobaMap(splitPayload)
   };
 }
 
@@ -594,7 +686,7 @@ async function fetchTodayMatchups() {
   ];
 
   const pitcherEntries = await Promise.all(
-    pitcherIds.map(async (personId) => [personId, await fetchPitcherSeason(personId, season)])
+    pitcherIds.map(async (personId) => [personId, await fetchPitcherProfile(personId, season)])
   );
   const pitchersById = Object.fromEntries(pitcherEntries);
 
@@ -639,7 +731,9 @@ async function fetchTodayMatchups() {
         pitcher: {
           name: awayPitcherMeta?.fullName || "TBD",
           era: awayPitcher?.era ?? null,
-          whip: awayPitcher?.whip ?? null
+          whip: awayPitcher?.whip ?? null,
+          hand: awayPitcher?.hand ?? null,
+          allowedWobaByBatterHand: awayPitcher?.allowedWobaByBatterHand ?? {}
         },
         bullpen: awayBullpen
       },
@@ -650,7 +744,9 @@ async function fetchTodayMatchups() {
         pitcher: {
           name: homePitcherMeta?.fullName || "TBD",
           era: homePitcher?.era ?? null,
-          whip: homePitcher?.whip ?? null
+          whip: homePitcher?.whip ?? null,
+          hand: homePitcher?.hand ?? null,
+          allowedWobaByBatterHand: homePitcher?.allowedWobaByBatterHand ?? {}
         },
         bullpen: homeBullpen
       },
@@ -661,12 +757,42 @@ async function fetchTodayMatchups() {
   });
 }
 
+async function fetchTeamHittingSplits(teamIds, season) {
+  const entries = await Promise.all(
+    teamIds.map(async (teamId) => {
+      try {
+        const payload = await fetchJson(buildTeamHittingSplitUrl(teamId, season));
+        return [teamId, extractSplitWobaMap(payload)];
+      } catch (error) {
+        return [teamId, {}];
+      }
+    })
+  );
+
+  return Object.fromEntries(entries);
+}
+
+function handSplitKey(hand) {
+  if (hand === "L") {
+    return "vl";
+  }
+
+  if (hand === "R") {
+    return "vr";
+  }
+
+  return null;
+}
+
 async function buildPayload() {
   const [standings, oddsByTeam, matchups] = await Promise.all([
     fetchStandings(),
     fetchOddsByTeam(),
     fetchTodayMatchups()
   ]);
+  const season = new Date().getFullYear();
+  const uniqueTeamIds = [...new Set(matchups.flatMap((game) => [game.away.id, game.home.id]).filter(Boolean))];
+  const teamHittingSplits = await fetchTeamHittingSplits(uniqueTeamIds, season);
 
   const standingsByCode = Object.fromEntries(
     standings.map((team) => [team.code, team])
@@ -715,6 +841,10 @@ async function buildPayload() {
       ...game.away,
       medianSpread: oddsByTeam[game.away.code]?.medianSpread ?? null,
       medianSpreadPrice: oddsByTeam[game.away.code]?.medianSpreadPrice ?? null,
+      hittingWobaVsPitcherHand:
+        handSplitKey(game.home.pitcher.hand)
+          ? teamHittingSplits[game.away.id]?.[handSplitKey(game.home.pitcher.hand)] ?? null
+          : null,
       record:
         standingsById[game.away.id]?.wins !== undefined
           ? `${standingsById[game.away.id].wins}-${standingsById[game.away.id].losses}`
@@ -731,6 +861,10 @@ async function buildPayload() {
       ...game.home,
       medianSpread: oddsByTeam[game.home.code]?.medianSpread ?? null,
       medianSpreadPrice: oddsByTeam[game.home.code]?.medianSpreadPrice ?? null,
+      hittingWobaVsPitcherHand:
+        handSplitKey(game.away.pitcher.hand)
+          ? teamHittingSplits[game.home.id]?.[handSplitKey(game.away.pitcher.hand)] ?? null
+          : null,
       record:
         standingsById[game.home.id]?.wins !== undefined
           ? `${standingsById[game.home.id].wins}-${standingsById[game.home.id].losses}`
