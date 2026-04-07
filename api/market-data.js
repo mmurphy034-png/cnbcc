@@ -72,6 +72,47 @@ const TEAM_ID_TO_CODE = {
   120: "WSH"
 };
 
+const MLB_ABBREVIATION_TO_CODE = {
+  ARI: "AZ",
+  AZ: "AZ",
+  ATL: "ATL",
+  BAL: "BAL",
+  BOS: "BOS",
+  CHC: "CHC",
+  CHW: "CWS",
+  CWS: "CWS",
+  CIN: "CIN",
+  CLE: "CLE",
+  COL: "COL",
+  DET: "DET",
+  HOU: "HOU",
+  KC: "KC",
+  KCR: "KC",
+  LAA: "LAA",
+  LAD: "LAD",
+  MIA: "MIA",
+  MIL: "MIL",
+  MIN: "MIN",
+  NYM: "NYM",
+  NYY: "NYY",
+  ATH: "ATH",
+  OAK: "ATH",
+  PHI: "PHI",
+  PIT: "PIT",
+  SD: "SD",
+  SDP: "SD",
+  SF: "SF",
+  SFG: "SF",
+  SEA: "SEA",
+  STL: "STL",
+  TB: "TB",
+  TBR: "TB",
+  TEX: "TEX",
+  TOR: "TOR",
+  WSH: "WSH",
+  WSN: "WSH"
+};
+
 let cache = {
   payload: null,
   expiresAt: 0
@@ -201,7 +242,10 @@ async function fetchStandings() {
   return records.flatMap((divisionRecord) =>
     (divisionRecord.teamRecords || []).map((teamRecord) => {
       const teamName = teamRecord.team?.name;
-      const code = TEAM_NAME_TO_CODE[teamName];
+      const code =
+        MLB_ABBREVIATION_TO_CODE[teamRecord.team?.abbreviation] ||
+        TEAM_ID_TO_CODE[teamRecord.team?.id] ||
+        TEAM_NAME_TO_CODE[teamName];
 
       if (!code) {
         return null;
@@ -235,6 +279,7 @@ function normalizeTeamCode(team) {
   }
 
   return (
+    MLB_ABBREVIATION_TO_CODE[team.abbreviation] ||
     TEAM_ID_TO_CODE[team.id] ||
     TEAM_NAME_TO_CODE[team.name] ||
     TEAM_NAME_TO_CODE[team.teamName] ||
