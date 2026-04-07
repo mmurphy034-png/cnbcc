@@ -3,12 +3,46 @@ const snapshotGrid = document.getElementById("snapshotGrid");
 const matchupsGrid = document.getElementById("matchupsGrid");
 const scoreboard = document.getElementById("scoreboard");
 
+const ESPN_LOGO_CODE = {
+  AZ: "ari",
+  ATL: "atl",
+  BAL: "bal",
+  BOS: "bos",
+  CHC: "chc",
+  CWS: "chw",
+  CIN: "cin",
+  CLE: "cle",
+  COL: "col",
+  DET: "det",
+  HOU: "hou",
+  KC: "kc",
+  LAA: "laa",
+  LAD: "lad",
+  MIA: "mia",
+  MIL: "mil",
+  MIN: "min",
+  NYM: "nym",
+  NYY: "nyy",
+  ATH: "oak",
+  PHI: "phi",
+  PIT: "pit",
+  SD: "sd",
+  SF: "sf",
+  SEA: "sea",
+  STL: "stl",
+  TB: "tb",
+  TEX: "tex",
+  TOR: "tor",
+  WSH: "wsh"
+};
+
 function teamLogoUrl(code) {
   if (!code) {
     return "";
   }
 
-  return `https://a.espncdn.com/combiner/i?img=/i/teamlogos/mlb/500/${String(code).toLowerCase()}.png&h=48&w=48&scale=crop&location=origin`;
+  const logoCode = ESPN_LOGO_CODE[code] || String(code).toLowerCase();
+  return `https://a.espncdn.com/combiner/i?img=/i/teamlogos/mlb/500/${logoCode}.png&h=48&w=48&scale=crop&location=origin`;
 }
 
 function formatPct(value) {
@@ -64,6 +98,22 @@ function probabilityBar(label, value, variant) {
       </div>
       <div class="probability-track">
         <span class="probability-fill ${variant}" style="width:${width}%"></span>
+      </div>
+    </div>
+  `;
+}
+
+function centeredProbabilityBar(label, value, side) {
+  const width = value === null || value === undefined ? 0 : Math.max(0, Math.min(50, value * 50));
+
+  return `
+    <div class="probability-block centered-block">
+      <div class="probability-label">
+        <span>${label}</span>
+        <strong>${formatPct(value)}</strong>
+      </div>
+      <div class="probability-track centered-track">
+        <span class="probability-fill centered-fill ${side}" style="width:${width}%"></span>
       </div>
     </div>
   `;
@@ -128,6 +178,7 @@ function renderMatchupCard(game) {
             <strong>${game.away.code}</strong>
           </div>
           <span class="win-pct">Win% ${formatPct(game.away.winPct)}</span>
+          <span class="team-record">${game.away.record || "--"}</span>
           <p>${game.away.pitcher.name}</p>
           <span>ERA ${formatNumber(game.away.pitcher.era)} | WHIP ${formatNumber(game.away.pitcher.whip)}</span>
           <span>Bullpen ${game.away.bullpen.state} (${formatNumber(game.away.bullpen.innings, 1)} IP yesterday)</span>
@@ -142,6 +193,7 @@ function renderMatchupCard(game) {
             <strong>${game.home.code}</strong>
           </div>
           <span class="win-pct">Win% ${formatPct(game.home.winPct)}</span>
+          <span class="team-record">${game.home.record || "--"}</span>
           <p>${game.home.pitcher.name}</p>
           <span>ERA ${formatNumber(game.home.pitcher.era)} | WHIP ${formatNumber(game.home.pitcher.whip)}</span>
           <span>Bullpen ${game.home.bullpen.state} (${formatNumber(game.home.bullpen.innings, 1)} IP yesterday)</span>
@@ -171,10 +223,10 @@ function renderScoreboard(items) {
                 <span>${game.matchup}</span>
                 <img class="team-logo small" src="${teamLogoUrl(game.home.code)}" alt="${game.home.code} logo" />
               </strong>
-              <p>${game.away.code} ${formatPct(game.away.winPct)} | ${game.home.code} ${formatPct(game.home.winPct)}</p>
+              <p>${game.away.code} ${game.away.record || "--"} | ${game.home.code} ${game.home.record || "--"}</p>
             </div>
-            <div>${probabilityBar(game.away.code, game.away.winPct, "actual")}</div>
-            <div>${probabilityBar(game.home.code, game.home.winPct, "market")}</div>
+            <div>${centeredProbabilityBar(game.away.code, game.away.winPct, "away")}</div>
+            <div>${centeredProbabilityBar(game.home.code, game.home.winPct, "home")}</div>
             <div>${game.starterEdge}</div>
             <div>${game.bullpenEdge}</div>
             <div><span class="relationship ${game.lean.includes("edge") ? "positive" : "neutral"}">${game.lean}</span></div>

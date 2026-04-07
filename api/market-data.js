@@ -212,6 +212,7 @@ async function fetchStandings() {
       const gamesPlayed = wins + losses;
 
       return {
+        id: teamRecord.team?.id,
         team: teamName,
         code,
         wins,
@@ -532,6 +533,7 @@ async function fetchTodayMatchups() {
       gameTime: game.gameDate,
       matchup: `${awayCode} @ ${homeCode}`,
       away: {
+        id: awayTeam?.id,
         team: awayName,
         code: awayCode,
         pitcher: {
@@ -542,6 +544,7 @@ async function fetchTodayMatchups() {
         bullpen: awayBullpen
       },
       home: {
+        id: homeTeam?.id,
         team: homeName,
         code: homeCode,
         pitcher: {
@@ -567,6 +570,9 @@ async function buildPayload() {
 
   const standingsByCode = Object.fromEntries(
     standings.map((team) => [team.code, team])
+  );
+  const standingsById = Object.fromEntries(
+    standings.map((team) => [team.id, team])
   );
   const standingsByName = Object.fromEntries(
     standings.map((team) => [normalizeNameKey(team.team), team])
@@ -605,14 +611,28 @@ async function buildPayload() {
     ...game,
     away: {
       ...game.away,
+      record:
+        standingsById[game.away.id]?.wins !== undefined
+          ? `${standingsById[game.away.id].wins}-${standingsById[game.away.id].losses}`
+          : standingsByCode[game.away.code]?.wins !== undefined
+            ? `${standingsByCode[game.away.code].wins}-${standingsByCode[game.away.code].losses}`
+            : null,
       winPct:
+        standingsById[game.away.id]?.winPct ??
         standingsByCode[game.away.code]?.winPct ??
         standingsByName[normalizeNameKey(game.away.team)]?.winPct ??
         null
     },
     home: {
       ...game.home,
+      record:
+        standingsById[game.home.id]?.wins !== undefined
+          ? `${standingsById[game.home.id].wins}-${standingsById[game.home.id].losses}`
+          : standingsByCode[game.home.code]?.wins !== undefined
+            ? `${standingsByCode[game.home.code].wins}-${standingsByCode[game.home.code].losses}`
+            : null,
       winPct:
+        standingsById[game.home.id]?.winPct ??
         standingsByCode[game.home.code]?.winPct ??
         standingsByName[normalizeNameKey(game.home.team)]?.winPct ??
         null

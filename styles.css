@@ -235,6 +235,11 @@ button {
   font-size: 0.66rem;
 }
 
+.team-record {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
 .matchup-team p {
   margin: 0;
   color: var(--text);
@@ -327,6 +332,36 @@ button {
 
 .probability-fill.gap {
   background: var(--gap);
+}
+
+.centered-track {
+  position: relative;
+}
+
+.centered-track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  left: 50%;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.centered-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--actual);
+}
+
+.centered-fill.away {
+  right: 50%;
+  border-radius: 999px 0 0 999px;
+}
+
+.centered-fill.home {
+  left: 50%;
+  border-radius: 0 999px 999px 0;
 }
 
 .last-price {
