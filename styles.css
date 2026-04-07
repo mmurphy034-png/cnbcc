@@ -454,6 +454,11 @@ button {
   padding: 8px 10px;
 }
 
+.matrix-row-simple,
+.matrix-head {
+  grid-template-columns: 1.8fr 0.8fr 1.45fr 0.8fr 0.8fr 0.95fr;
+}
+
 .matrix-head {
   color: var(--muted);
   text-transform: uppercase;
@@ -464,6 +469,18 @@ button {
 .team-cell strong {
   display: block;
   font-size: 0.8rem;
+}
+
+.live-cell strong,
+.line-cell {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.live-cell p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.68rem;
 }
 
 .matrix-row .probability-block {
