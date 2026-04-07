@@ -207,7 +207,7 @@ function buildOddsUrl() {
 
   const url = new URL(ODDS_API_BASE_URL);
   url.searchParams.set("regions", "us");
-  url.searchParams.set("markets", "h2h");
+  url.searchParams.set("markets", "h2h,spreads");
   url.searchParams.set("oddsFormat", "american");
   url.searchParams.set("apiKey", apiKey);
   return url.toString();
@@ -301,19 +301,30 @@ async function fetchOddsByTeam() {
   for (const event of events) {
     const bookmakers = event.bookmakers || [];
     const marketRows = [];
+    const spreadRows = [];
 
     for (const bookmaker of bookmakers) {
-      const market = (bookmaker.markets || []).find((entry) => entry.key === "h2h");
-      if (!market) {
-        continue;
+      const moneylineMarket = (bookmaker.markets || []).find((entry) => entry.key === "h2h");
+      const spreadMarket = (bookmaker.markets || []).find((entry) => entry.key === "spreads");
+
+      if (moneylineMarket) {
+        for (const outcome of moneylineMarket.outcomes || []) {
+          marketRows.push({
+            teamName: outcome.name,
+            price: Number(outcome.price),
+            bookmaker: bookmaker.title
+          });
+        }
       }
 
-      for (const outcome of market.outcomes || []) {
-        marketRows.push({
-          teamName: outcome.name,
-          price: Number(outcome.price),
-          bookmaker: bookmaker.title
-        });
+      if (spreadMarket) {
+        for (const outcome of spreadMarket.outcomes || []) {
+          spreadRows.push({
+            teamName: outcome.name,
+            point: Number(outcome.point),
+            price: Number(outcome.price)
+          });
+        }
       }
     }
 
@@ -331,6 +342,20 @@ async function fetchOddsByTeam() {
       grouped[code].push(row.price);
     }
 
+    const groupedSpreads = {};
+    for (const row of spreadRows) {
+      const code = normalizeTeamName(row.teamName);
+      if (!code || !Number.isFinite(row.point)) {
+        continue;
+      }
+
+      if (!groupedSpreads[code]) {
+        groupedSpreads[code] = [];
+      }
+
+      groupedSpreads[code].push(row.point);
+    }
+
     Object.entries(grouped).forEach(([code, prices]) => {
       const impliedValues = prices
         .map((price) => americanToImpliedProbability(price))
@@ -338,6 +363,7 @@ async function fetchOddsByTeam() {
 
       byTeam[code] = {
         medianMoneyline: median(prices),
+        medianSpread: median(groupedSpreads[code] || []),
         averageImpliedWinProbability: average(impliedValues),
         bookmakersCount: prices.length,
         commenceTime: event.commence_time || null,
@@ -632,6 +658,7 @@ async function buildPayload() {
         ...team,
         averageImpliedWinProbability,
         medianMoneyline: odds?.medianMoneyline ?? null,
+        medianSpread: odds?.medianSpread ?? null,
         bookmakersCount: odds?.bookmakersCount ?? 0,
         nextMarketTime: odds?.commenceTime ?? null,
         matchup: odds?.matchup ?? "No current moneyline found",
@@ -656,6 +683,7 @@ async function buildPayload() {
     ...game,
     away: {
       ...game.away,
+      medianSpread: oddsByTeam[game.away.code]?.medianSpread ?? null,
       record:
         standingsById[game.away.id]?.wins !== undefined
           ? `${standingsById[game.away.id].wins}-${standingsById[game.away.id].losses}`
@@ -670,6 +698,7 @@ async function buildPayload() {
     },
     home: {
       ...game.home,
+      medianSpread: oddsByTeam[game.home.code]?.medianSpread ?? null,
       record:
         standingsById[game.home.id]?.wins !== undefined
           ? `${standingsById[game.home.id].wins}-${standingsById[game.home.id].losses}`

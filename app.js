@@ -61,6 +61,14 @@ function formatMoneyline(value) {
   return value > 0 ? `+${value}` : `${value}`;
 }
 
+function formatSpread(value) {
+  if (value === null || value === undefined) {
+    return "--";
+  }
+
+  return value > 0 ? `+${value}` : `${value}`;
+}
+
 function formatGap(value) {
   if (value === null || value === undefined) {
     return "--";
@@ -181,6 +189,7 @@ function renderMatchupCard(game) {
           <span class="team-record">${game.away.record || "--"}</span>
           <p>${game.away.pitcher.name}</p>
           <span>ERA ${formatNumber(game.away.pitcher.era)} | WHIP ${formatNumber(game.away.pitcher.whip)}</span>
+          <span>Run line ${formatSpread(game.away.medianSpread)}</span>
           <span>Bullpen ${game.away.bullpen.state} (${formatNumber(game.away.bullpen.innings, 1)} IP yesterday)</span>
         </div>
         <div class="matchup-meta">
@@ -196,6 +205,7 @@ function renderMatchupCard(game) {
           <span class="team-record">${game.home.record || "--"}</span>
           <p>${game.home.pitcher.name}</p>
           <span>ERA ${formatNumber(game.home.pitcher.era)} | WHIP ${formatNumber(game.home.pitcher.whip)}</span>
+          <span>Run line ${formatSpread(game.home.medianSpread)}</span>
           <span>Bullpen ${game.home.bullpen.state} (${formatNumber(game.home.bullpen.innings, 1)} IP yesterday)</span>
         </div>
       </div>
