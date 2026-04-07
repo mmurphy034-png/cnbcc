@@ -510,6 +510,10 @@ async function buildPayload() {
     fetchTodayMatchups()
   ]);
 
+  const standingsByCode = Object.fromEntries(
+    standings.map((team) => [team.code, team])
+  );
+
   const scoreboard = standings
     .map((team) => {
       const odds = oddsByTeam[team.code] || null;
@@ -539,6 +543,17 @@ async function buildPayload() {
     }));
 
   const summary = summarize(scoreboard);
+  const matchupsWithRecords = matchups.map((game) => ({
+    ...game,
+    away: {
+      ...game.away,
+      winPct: standingsByCode[game.away.code]?.winPct ?? null
+    },
+    home: {
+      ...game.home,
+      winPct: standingsByCode[game.home.code]?.winPct ?? null
+    }
+  }));
 
   return {
     fetchedAt: new Date().toISOString(),
@@ -552,7 +567,7 @@ async function buildPayload() {
       marketHigher: scoreboard.filter((team) => team.marketVsRecordGap !== null && team.marketVsRecordGap > 0.06).slice(0, 6),
       marketLower: scoreboard.filter((team) => team.marketVsRecordGap !== null && team.marketVsRecordGap < -0.06).slice(0, 6)
     },
-    matchups,
+    matchups: matchupsWithRecords,
     scoreboard
   };
 }

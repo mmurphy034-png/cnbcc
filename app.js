@@ -106,18 +106,22 @@ function formatNumber(value, digits = 2) {
 }
 
 function renderMatchupCard(game) {
+  const leanClass =
+    game.lean.includes("Away") ? "positive" : game.lean.includes("Home") ? "positive" : "neutral";
+
   return `
     <article class="matchup-card">
       <div class="matchup-top">
         <div>
           <p class="eyebrow">${game.matchup}</p>
-          <h3>${game.lean}</h3>
+          <h3 class="${leanClass}">${game.lean}</h3>
         </div>
         <div class="pill ${game.lean.includes("away") ? "positive" : game.lean.includes("home") ? "negative" : "neutral"}">${game.gameTime ? new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(game.gameTime)) : "TBD"}</div>
       </div>
       <div class="matchup-columns">
         <div class="matchup-team">
           <strong>${game.away.code}</strong>
+          <span class="win-pct">Win% ${formatPct(game.away.winPct)}</span>
           <p>${game.away.pitcher.name}</p>
           <span>ERA ${formatNumber(game.away.pitcher.era)} | WHIP ${formatNumber(game.away.pitcher.whip)}</span>
           <span>Bullpen ${game.away.bullpen.state} (${formatNumber(game.away.bullpen.innings, 1)} IP yesterday)</span>
@@ -128,6 +132,7 @@ function renderMatchupCard(game) {
         </div>
         <div class="matchup-team">
           <strong>${game.home.code}</strong>
+          <span class="win-pct">Win% ${formatPct(game.home.winPct)}</span>
           <p>${game.home.pitcher.name}</p>
           <span>ERA ${formatNumber(game.home.pitcher.era)} | WHIP ${formatNumber(game.home.pitcher.whip)}</span>
           <span>Bullpen ${game.home.bullpen.state} (${formatNumber(game.home.bullpen.innings, 1)} IP yesterday)</span>
@@ -140,26 +145,26 @@ function renderMatchupCard(game) {
 function renderScoreboard(items) {
   scoreboard.innerHTML = `
     <div class="matrix-head">
-      <span>Team</span>
-      <span>Record win%</span>
-      <span>Market implied</span>
-      <span>Gap</span>
-      <span>Moneyline</span>
-      <span>Signal</span>
+      <span>Game</span>
+      <span>Away win%</span>
+      <span>Home win%</span>
+      <span>Starter edge</span>
+      <span>Bullpen edge</span>
+      <span>Lean</span>
     </div>
     ${items
       .map(
-        (team) => `
+        (game) => `
           <article class="matrix-row">
             <div class="team-cell">
-              <strong>${team.team}</strong>
-              <p>${team.code} | ${team.wins}-${team.losses}</p>
+              <strong>${game.matchup}</strong>
+              <p>${game.away.code} ${formatPct(game.away.winPct)} | ${game.home.code} ${formatPct(game.home.winPct)}</p>
             </div>
-            <div>${probabilityBar("Record", team.winPct, "actual")}</div>
-            <div>${probabilityBar("Market", team.averageImpliedWinProbability, "market")}</div>
-            <div class="${toneClass(team.marketVsRecordGap)}">${formatGap(team.marketVsRecordGap)}</div>
-            <div>${formatMoneyline(team.medianMoneyline)}</div>
-            <div><span class="relationship ${toneClass(team.marketVsRecordGap)}">${team.signal}</span></div>
+            <div>${probabilityBar(game.away.code, game.away.winPct, "actual")}</div>
+            <div>${probabilityBar(game.home.code, game.home.winPct, "market")}</div>
+            <div>${game.starterEdge}</div>
+            <div>${game.bullpenEdge}</div>
+            <div><span class="relationship ${game.lean.includes("edge") ? "positive" : "neutral"}">${game.lean}</span></div>
           </article>
         `
       )
@@ -217,7 +222,7 @@ function renderDashboard(payload) {
     payload.groups.marketLower || [],
     "No teams are materially below their record in current pricing."
   );
-  renderScoreboard(payload.scoreboard || []);
+  renderScoreboard(payload.matchups || []);
 
   statusText.textContent = `Last refreshed ${new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
